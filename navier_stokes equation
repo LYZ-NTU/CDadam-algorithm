@@ -1,0 +1,451 @@
+"""Backend supported: tensorflow.compat.v1, tensorflow, pytorch, paddle"""
+import numpy as np
+from deepxde.backend import tf
+import tensorflow as tf
+from tensorflow.keras.optimizers import Optimizer
+from scipy.special import gamma
+import deepxde as dde
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+# 使用新的优化器
+h = 0.01
+k=5
+ordered=0.7
+a=np.pi
+
+
+ec=20000
+Re = 40
+nu = 1 / Re
+l = 1 / (2 * nu) - np.sqrt(1 / (4 * nu**2) + 4 * np.pi**2)
+
+
+def PINNpde(x, u):
+    u_vel, v_vel, p = u[:, 0:1], u[:, 1:2], u[:, 2:]
+    u_vel_x = dde.grad.jacobian(u, x, i=0, j=0)
+    u_vel_y = dde.grad.jacobian(u, x, i=0, j=1)
+    u_vel_xx = dde.grad.hessian(u, x, component=0, i=0, j=0)
+    u_vel_yy = dde.grad.hessian(u, x, component=0, i=1, j=1)
+
+    v_vel_x = dde.grad.jacobian(u, x, i=1, j=0)
+    v_vel_y = dde.grad.jacobian(u, x, i=1, j=1)
+    v_vel_xx = dde.grad.hessian(u, x, component=1, i=0, j=0)
+    v_vel_yy = dde.grad.hessian(u, x, component=1, i=1, j=1)
+
+    p_x = dde.grad.jacobian(u, x, i=2, j=0)
+    p_y = dde.grad.jacobian(u, x, i=2, j=1)
+
+    momentum_x = (
+        u_vel * u_vel_x + v_vel * u_vel_y + p_x - 1 / Re * (u_vel_xx + u_vel_yy)
+    )
+    momentum_y = (
+        u_vel * v_vel_x + v_vel * v_vel_y + p_y - 1 / Re * (v_vel_xx + v_vel_yy)
+    )
+    continuity = u_vel_x + v_vel_y
+
+    return [momentum_x, momentum_y, continuity]
+
+
+def u_func(x):
+    return 1 - np.exp(l * x[:, 0:1]) * np.cos(2 * np.pi * x[:, 1:2])
+
+
+def v_func(x):
+    return l / (2 * np.pi) * np.exp(l * x[:, 0:1]) * np.sin(2 * np.pi * x[:, 1:2])
+
+
+def p_func(x):
+    return 1 / 2 * (1 - np.exp(2 * l * x[:, 0:1]))
+
+
+def boundary_outflow(x, on_boundary):
+    return on_boundary and dde.utils.isclose(x[0], 1)
+
+
+spatial_domain = dde.geometry.Rectangle(xmin=[-0.5, -0.5], xmax=[1, 1.5])
+
+boundary_condition_u = dde.icbc.DirichletBC(
+    spatial_domain, u_func, lambda _, on_boundary: on_boundary, component=0
+)
+boundary_condition_v = dde.icbc.DirichletBC(
+    spatial_domain, v_func, lambda _, on_boundary: on_boundary, component=1
+)
+boundary_condition_right_p = dde.icbc.DirichletBC(
+    spatial_domain, p_func, boundary_outflow, component=2
+)
+
+data = dde.data.PDE(
+    spatial_domain,
+    PINNpde,
+    [boundary_condition_u, boundary_condition_v, boundary_condition_right_p],
+    num_domain=2601,
+    num_boundary=400,
+    num_test=1000,
+)
+
+net = dde.nn.FNN([2] + 4 * [50] + [3], "tanh", "Glorot normal")
+
+PINNmodel = dde.Model(data, net)
+
+PINNmodel.compile("adam", lr=1e-4)
+losshistory, train_state = PINNmodel.train(epochs=ec, callbacks=[])
+
+
+# 生成测试点
+x = np.linspace(-0.5, 1, 400)
+y = np.linspace(-0.5, 1.5, 400)
+X, Y = np.meshgrid(x, y)
+X_test = np.vstack((X.ravel(), Y.ravel())).T
+
+
+# 预测结果
+output = PINNmodel.predict(X_test)
+u_pred = output[:, 0].reshape(X.shape)
+v_pred = output[:, 1].reshape(X.shape)
+p_pred = output[:, 2].reshape(X.shape)
+
+# 精确解
+u_exact = u_func(X_test).reshape(X.shape)
+v_exact = v_func(X_test).reshape(X.shape)
+p_exact = p_func(X_test).reshape(X.shape)
+
+# 绘图函数
+def plot_field(field, title, extent, cmap='viridis'):
+    plt.figure(figsize=(15, 15))
+    plt.rcParams.update({"font.size": 50})
+    plt.title(title, fontsize=50)
+    plt.xlabel("x", fontsize=40)
+    plt.ylabel("y", fontsize=40)
+    im = plt.imshow(field, extent=extent, origin='lower', cmap=cmap)
+    divider = make_axes_locatable(plt.gca())
+    cax = divider.append_axes("right", size="2%", pad=0.5)
+    plt.colorbar(im, cax=cax)
+    plt.show()
+
+# 绘制预测解
+plot_field(u_pred, "Predicted u", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(v_pred, "Predicted v", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(p_pred, "Predicted p", extent=[-0.5, 1, -0.5, 1.5])
+
+# 绘制误差
+u_error = np.abs(u_pred - u_exact)
+v_error = np.abs(v_pred - v_exact)
+p_error = np.abs(p_pred - p_exact)
+
+plot_field(u_error, "Error in u", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(v_error, "Error in v", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(p_error, "Error in p", extent=[-0.5, 1, -0.5, 1.5])
+
+
+
+
+
+
+def cdPINNpde(x, u):
+    u_vel, v_vel, p = u[:, 0:1], u[:, 1:2], u[:, 2:]
+    u_vel_x = dde.grad.jacobian(u, x, i=0, j=0)
+    u_vel_y = dde.grad.jacobian(u, x, i=0, j=1)
+    u_vel_xx = dde.grad.hessian(u, x, component=0, i=0, j=0)
+    u_vel_yy = dde.grad.hessian(u, x, component=0, i=1, j=1)
+
+    v_vel_x = dde.grad.jacobian(u, x, i=1, j=0)
+    v_vel_y = dde.grad.jacobian(u, x, i=1, j=1)
+    v_vel_xx = dde.grad.hessian(u, x, component=1, i=0, j=0)
+    v_vel_yy = dde.grad.hessian(u, x, component=1, i=1, j=1)
+
+    p_x = dde.grad.jacobian(u, x, i=2, j=0)
+    p_y = dde.grad.jacobian(u, x, i=2, j=1)
+
+    momentum_x = (
+        u_vel * u_vel_x + v_vel * u_vel_y + p_x - 1 / Re * (u_vel_xx + u_vel_yy)
+    )
+    momentum_y = (
+        u_vel * v_vel_x + v_vel * v_vel_y + p_y - 1 / Re * (v_vel_xx + v_vel_yy)
+    )
+    continuity = u_vel_x + v_vel_y
+
+    return [momentum_x, momentum_y, continuity]
+
+
+def u_func(x):
+    return 1 - np.exp(l * x[:, 0:1]) * np.cos(2 * np.pi * x[:, 1:2])
+
+
+def v_func(x):
+    return l / (2 * np.pi) * np.exp(l * x[:, 0:1]) * np.sin(2 * np.pi * x[:, 1:2])
+
+
+def p_func(x):
+    return 1 / 2 * (1 - np.exp(2 * l * x[:, 0:1]))
+
+
+def boundary_outflow(x, on_boundary):
+    return on_boundary and dde.utils.isclose(x[0], 1)
+
+
+spatial_domain = dde.geometry.Rectangle(xmin=[-0.5, -0.5], xmax=[1, 1.5])
+
+boundary_condition_u = dde.icbc.DirichletBC(
+    spatial_domain, u_func, lambda _, on_boundary: on_boundary, component=0
+)
+boundary_condition_v = dde.icbc.DirichletBC(
+    spatial_domain, v_func, lambda _, on_boundary: on_boundary, component=1
+)
+boundary_condition_right_p = dde.icbc.DirichletBC(
+    spatial_domain, p_func, boundary_outflow, component=2
+)
+
+data = dde.data.PDE(
+    spatial_domain,
+    cdPINNpde,
+    [boundary_condition_u, boundary_condition_v, boundary_condition_right_p],
+    num_domain=2601,
+    num_boundary=400,
+    num_test=1000,
+)
+
+net = dde.nn.FNN([2] + 4 * [50] + [3], "tanh", "Glorot normal")
+
+class CentralDifferenceAdam(tf.keras.optimizers.Optimizer):
+    def __init__(self, learning_rate=0.0001, beta_1=0.99, beta_2=0.999, epsilon=1e-8, h=h, **kwargs):
+        super(CentralDifferenceAdam, self).__init__(name="CentralDifferenceAdam", **kwargs)
+        self._set_hyper("learning_rate", learning_rate)
+        self._set_hyper("beta_1", beta_1)
+        self._set_hyper("beta_2", beta_2)
+        self._set_hyper("epsilon", epsilon)
+        self._set_hyper("h", h)
+
+    def _create_slots(self, var_list):
+        for var in var_list:
+            self.add_slot(var, "m")
+            self.add_slot(var, "v")
+
+    def PINNpde(self,u):
+        u_vel, v_vel, p = u[:, 0:1], u[:, 1:2], u[:, 2:]
+        u_vel_x = dde.grad.jacobian(u, x, i=0, j=0)
+        u_vel_y = dde.grad.jacobian(u, x, i=0, j=1)
+        u_vel_xx = dde.grad.hessian(u, x, component=0, i=0, j=0)
+        u_vel_yy = dde.grad.hessian(u, x, component=0, i=1, j=1)
+
+        v_vel_x = dde.grad.jacobian(u, x, i=1, j=0)
+        v_vel_y = dde.grad.jacobian(u, x, i=1, j=1)
+        v_vel_xx = dde.grad.hessian(u, x, component=1, i=0, j=0)
+        v_vel_yy = dde.grad.hessian(u, x, component=1, i=1, j=1)
+
+        p_x = dde.grad.jacobian(u, x, i=2, j=0)
+        p_y = dde.grad.jacobian(u, x, i=2, j=1)
+
+        momentum_x = (
+        u_vel * u_vel_x + v_vel * u_vel_y + p_x - 1 / Re * (u_vel_xx + u_vel_yy)
+    )
+        momentum_y = (
+        u_vel * v_vel_x + v_vel * v_vel_y + p_y - 1 / Re * (v_vel_xx + v_vel_yy)
+    )
+        continuity = u_vel_x + v_vel_y
+        return [momentum_x, momentum_y, continuity]
+
+
+    def grad_approx(self, loss, var, h):
+        var_plus_h = var + h
+        var_minus_h = var - h
+        loss_plus = loss(var_plus_h)
+        loss_minus = loss(var_minus_h)
+        grad_approx = (loss_plus - loss_minus) / (2 * h)
+        return grad_approx
+
+    def _resource_apply_dense(self, grad_approx, var):
+        m = self.get_slot(var, "m")
+        v = self.get_slot(var, "v")
+        beta_1_t = self._get_hyper("beta_1", tf.float32)
+        beta_2_t = self._get_hyper("beta_2", tf.float32)
+        lr_t = self._get_hyper("learning_rate", tf.float32)
+        epsilon_t = self._get_hyper("epsilon", tf.float32)
+        local_step = tf.cast(self.iterations + 1, tf.float32)
+
+        m_t = tf.compat.v1.assign(m, beta_1_t * m + (1. - beta_1_t) * grad_approx, use_locking=self._use_locking)
+        v_t = tf.compat.v1.assign(v, beta_2_t * v + (1. - beta_2_t) * tf.square(grad_approx), use_locking=self._use_locking)
+
+        m_hat = m_t / (1. - tf.pow(beta_1_t, local_step))
+        v_hat = v_t / (1. - tf.pow(beta_2_t, local_step))
+
+        var_update = tf.compat.v1.assign_sub(var, lr_t * m_hat / (tf.sqrt(v_hat) + epsilon_t), use_locking=self._use_locking)
+        return tf.group(*[var_update, m_t, v_t])
+
+    def get_config(self):
+        config = super(CentralDifferenceAdam, self).get_config()
+        config.update({
+            "learning_rate": self._serialize_hyperparameter("learning_rate"),
+            "beta_1": self._serialize_hyperparameter("beta_1"),
+            "beta_2": self._serialize_hyperparameter("beta_2"),
+            "epsilon": self._serialize_hyperparameter("epsilon"),
+            "h": self._serialize_hyperparameter("h"),
+        })
+        return config
+
+
+cdPINNmodel = dde.Model(data, net)
+optimizer = CentralDifferenceAdam(learning_rate=1e-4)
+cdPINNmodel.compile(optimizer=optimizer)
+losshistory, train_state = cdPINNmodel.train(epochs=ec, callbacks=[])
+
+
+
+# 生成测试点
+x = np.linspace(-0.5, 1, 400)
+y = np.linspace(-0.5, 1.5, 400)
+X, Y = np.meshgrid(x, y)
+X_test = np.vstack((X.ravel(), Y.ravel())).T
+
+
+# 预测结果
+output = cdPINNmodel.predict(X_test)
+u_pred = output[:, 0].reshape(X.shape)
+v_pred = output[:, 1].reshape(X.shape)
+p_pred = output[:, 2].reshape(X.shape)
+
+# 精确解
+u_exact = u_func(X_test).reshape(X.shape)
+v_exact = v_func(X_test).reshape(X.shape)
+p_exact = p_func(X_test).reshape(X.shape)
+
+# 绘图函数
+def plot_field(field, title, extent, cmap='viridis'):
+    plt.figure(figsize=(15, 15))
+    plt.rcParams.update({"font.size": 50})
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+    im = plt.imshow(field, extent=extent, origin='lower', cmap=cmap)
+    divider = make_axes_locatable(plt.gca())
+    cax = divider.append_axes("right", size="2%", pad=0.5)
+    plt.colorbar(im, cax=cax)
+    plt.show()
+
+# 绘制预测解
+plot_field(u_pred, "Predicted u", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(v_pred, "Predicted v", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(p_pred, "Predicted p", extent=[-0.5, 1, -0.5, 1.5])
+
+# 绘制误差
+u_error = np.abs(u_pred - u_exact)
+v_error = np.abs(v_pred - v_exact)
+p_error = np.abs(p_pred - p_exact)
+
+plot_field(u_error, "Error in u", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(v_error, "Error in v", extent=[-0.5, 1, -0.5, 1.5])
+plot_field(p_error, "Error in p", extent=[-0.5, 1, -0.5, 1.5])
+
+
+
+
+X = spatial_domain.random_points(10000)
+output1 = PINNmodel.predict(X)
+output2 = cdPINNmodel.predict(X)
+
+u_pred = output1[:, 0]
+v_pred = output1[:, 1]
+p_pred = output1[:, 2]
+
+GLu_pred = output2[:, 0]
+GLv_pred = output2[:, 1]
+GLp_pred = output2[:, 2]
+
+u_exact = u_func(X).reshape(-1)
+v_exact = v_func(X).reshape(-1)
+p_exact = p_func(X).reshape(-1)
+
+f = PINNmodel.predict(X, operator=PINNpde)
+
+cdf = cdPINNmodel.predict(X, operator=cdPINNpde)
+
+l2_difference_u = dde.metrics.l2_relative_error(u_exact, u_pred)
+l2_difference_v = dde.metrics.l2_relative_error(v_exact, v_pred)
+l2_difference_p = dde.metrics.l2_relative_error(p_exact, p_pred)
+residual = np.mean(np.absolute(f))
+
+
+cd_l2_difference_u = dde.metrics.l2_relative_error(u_exact, GLu_pred)
+cd_l2_difference_v = dde.metrics.l2_relative_error(v_exact, GLv_pred)
+cd_l2_difference_p = dde.metrics.l2_relative_error(p_exact, GLp_pred)
+cd_residual = np.mean(np.absolute(cdf))
+
+print("Mean residual:", residual)
+print("cd Mean residual:", cd_residual)
+print("L2 relative error in u:", l2_difference_u)
+print("cd L2 relative error in u:", cd_l2_difference_u)
+print("L2 relative error in v:", l2_difference_v)
+print("cd L2 relative error in v:", cd_l2_difference_v)
+print("L2 relative error in p:", l2_difference_p)
+print("cd L2 relative error in p:", cd_l2_difference_p)
+
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+Re = 20
+nu = 1 / Re
+l = 1 / (2 * nu) - np.sqrt(1 / (4 * nu**2) + 4 * np.pi**2)
+# 定义函数
+def u(x, y):
+    return 1 - np.exp(l * x) * np.cos(2 * np.pi * y)
+def v(x, y):
+    return l / (2 * np.pi) * np.exp(l * x) * np.sin(2 * np.pi * y)
+def p(x):
+    return 1 / 2 * (1 - np.exp(2 * l * x))
+
+
+# 定义x和t的范围
+x = np.linspace(-0.5, 1, 400)
+y = np.linspace(-0.5, 1.5, 400)
+
+# 创建网格
+X, Y = np.meshgrid(x, y)
+
+# 计算函数值
+U = u(X, Y)
+V = v(X, Y)
+P = p(X)
+
+plt.rcParams.update({"font.size": 50})
+plt.figure(figsize=(15, 15))
+# 绘制等高线图
+contour = plt.contourf(X, Y, U, levels=14, cmap='viridis')
+
+# 创建颜色条
+cbar = plt.colorbar(contour, orientation='vertical')
+
+# 设置颜色条的刻度格式为3位小数
+cbar.formatter = plt.FuncFormatter(lambda x, _: f"{x:.4f}")
+
+# 应用刻度格式器
+cbar.update_ticks()
+
+# 设置图表标题和轴标签
+plt.title('u(x, y) ')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.show()
+
+plt.rcParams.update({"font.size": 50})
+plt.figure(figsize=(15, 15))
+contour = plt.contourf(X, Y, V, levels=14, cmap='viridis')
+
+# 创建颜色条
+cbar = plt.colorbar(contour, orientation='vertical')
+
+# 设置颜色条的刻度格式为3位小数
+cbar.formatter = plt.FuncFormatter(lambda x, _: f"{x:.4f}")
+
+# 应用刻度格式器
+cbar.update_ticks()
+
+# 设置图表标题和轴标签
+plt.title('v(x, y) ')
+plt.xlabel('x')
+plt.ylabel('y')
+
+# # 显示网格线
+# plt.grid(True)
+# 显示图像
+plt.show()
+
