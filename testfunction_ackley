@@ -200,7 +200,7 @@ cdadam_loss = [ackley(p[0], p[1]) for p in path_improved]
 
 # 可视化比较
 paths = [path_adamax, path_nadam]
-labels = ['Adamax', 'Nadam']
+labels = ['Adam', 'CDadam']
 linestyles = ['-.', '--',]
 colors = ['#1f77b4', 'm']
 
