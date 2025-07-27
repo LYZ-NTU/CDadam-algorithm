@@ -1,0 +1,375 @@
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+import numpy as np
+from deepxde.backend import tf
+import tensorflow as tf
+from tensorflow.keras.optimizers import Optimizer
+from scipy.special import gamma
+import deepxde as dde
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from math import *
+
+# 使用新的优化器
+h = 0.00001
+k=5
+ordered=0.7
+a=np.pi
+ec=20000
+
+plt.rcParams['axes.labelsize'] = 50   # x、y轴标题
+plt.rcParams['xtick.labelsize'] = 50    # x轴刻度
+plt.rcParams['ytick.labelsize'] = 50    # y轴刻度
+
+def gen_testdata():
+    data = np.load("Burgers.npz")
+    t, x, exact = data["t"], data["x"], data["usol"].T
+    xx, tt = np.meshgrid(x, t)
+    x = np.vstack((np.ravel(xx), np.ravel(tt))).T
+    y = exact.flatten()[:, None]
+    return x, y
+# PINN
+def output_transform(x, y):
+    x_in = x[:, 0:1]
+    t_in = x[:, 1:2]
+
+    return (1 - x_in) * (1 + x_in) * (1 - tf.exp(-t_in)) * y - tf.sin(np.pi * x_in)
+def PINNpde(x, y):
+    dy_x = dde.grad.jacobian(y, x, i=0, j=0)
+    dy_t = dde.grad.jacobian(y, x, i=0, j=1)
+    dy_xx = dde.grad.hessian(y, x, i=0, j=0)
+    return [dy_t + y * dy_x - 0.01 / np.pi * dy_xx]
+
+
+geom = dde.geometry.Interval(-1, 1)
+timedomain = dde.geometry.TimeDomain(0, 1)
+geomtime = dde.geometry.GeometryXTime(geom, timedomain)
+
+data = dde.data.TimePDE(
+    geomtime,
+     PINNpde,
+    [],
+    num_domain=1500
+)
+layer_size = [2] + [32] * 3 + [1]
+activation = "tanh"
+initializer = "Glorot uniform"
+net = dde.maps.FNN(layer_size, activation, initializer)
+net.apply_output_transform(output_transform)
+
+PINNmodel = dde.Model(data, net)
+PINNmodel.compile("adam", lr=1e-3)
+losshistory, train_state = PINNmodel.train(epochs=ec)
+dde.saveplot(losshistory, train_state, issave=False, isplot=False)
+
+
+
+def gen_test_x(num):
+    x = np.linspace(-1, 1, num)
+    t = np.linspace(1, 0, num)
+    l = []
+
+    for i in range(len(t)):
+        for j in range(len(x)):
+            l.append([x[j], t[i]])
+    return np.array(l)
+x1=gen_test_x(1000)
+plt.rcParams.update({"font.size": 32})
+X1=gen_test_x(1000)
+y1= PINNmodel.predict(x1).tolist()
+
+
+disp1 = []
+prev = X1[0][1]
+temp = []
+for i in range(len(y1)):
+    if X1[i][1] == prev:
+        temp.append(y1[i][0])
+    else:
+        prev = X1[i][1]
+        temp2 = []
+        for elem in temp:
+            temp2.append((elem))
+        disp1.append(temp2)
+        temp.clear()
+        temp.append(y1[i][0])
+disp1.reverse()
+plt.figure(figsize=(20,20))  # 调整图像尺寸
+plt.xlabel("x")
+plt.ylabel("t")
+plt.title("Adam Prediction")
+ax = plt.gca()
+im = ax.imshow(disp1, extent=(-1, 1, 0, 1), origin='lower', aspect='auto')
+divider = make_axes_locatable(ax)
+width = ax.get_position().width
+height = ax.get_position().height
+cax = divider.append_axes("right", size="2%", pad=1)
+# 绘制等高线图
+plt.colorbar(im, cax=cax)
+plt.show()
+
+
+plt.figure()
+x_true, y_true = gen_testdata()
+X2=x_true
+y2= PINNmodel.predict(x_true).tolist()
+
+disp2 = []
+prev = X2[0][1]
+temp = []
+
+for i in range(len(y2)):
+    if X2[i][1] == prev:
+        temp.append(abs(y2[i][0] - y_true[i][0]))
+    else:
+        prev = X2[i][1]
+        temp2 = []
+        for elem in temp:
+            temp2.append((elem))
+        disp2.append(temp2)
+        temp.clear()
+        temp.append(y2[i][0])
+disp2.reverse()
+
+plt.figure(figsize=(20, 20))
+plt.xlabel("x")
+plt.ylabel("t")
+plt.title("Adam Error")
+
+ax = plt.gca()
+
+im = ax.imshow(disp2, extent=(-1, 1, 0, 1), origin='lower', aspect='auto')
+divider = make_axes_locatable(ax)
+width = ax.get_position().width
+height = ax.get_position().height
+cax = divider.append_axes("right", size="2%", pad=1)
+# 绘制等高线图
+plt.colorbar(im, cax=cax)
+plt.show()
+
+
+
+
+
+# GL PINN
+def output_transform(x, y):
+    x_in = x[:, 0:1]
+    t_in = x[:, 1:2]
+
+    return (1 - x_in) * (1 + x_in) * (1 - tf.exp(-t_in)) * y - tf.sin(np.pi * x_in)
+def cdPINNpde(x, y):
+    dy_x = dde.grad.jacobian(y, x, i=0, j=0)
+    dy_t = dde.grad.jacobian(y, x, i=0, j=1)
+    dy_xx = dde.grad.hessian(y, x, i=0, j=0)
+    return [dy_t + y * dy_x - 0.01 / np.pi * dy_xx]
+
+
+geom = dde.geometry.Interval(-1, 1)
+timedomain = dde.geometry.TimeDomain(0, 1)
+geomtime = dde.geometry.GeometryXTime(geom, timedomain)
+
+data = dde.data.TimePDE(
+    geomtime,
+    cdPINNpde,
+    [],
+    num_domain=1500
+)
+layer_size = [2] + [32] * 3 + [1]
+activation = "tanh"
+initializer = "Glorot uniform"
+net = dde.maps.FNN(layer_size, activation, initializer)
+net.apply_output_transform(output_transform)
+
+class CentralDifferenceAdam(tf.keras.optimizers.Optimizer):
+    def __init__(self, learning_rate=0.0001, beta_1=0.99, beta_2=0.999, epsilon=1e-8, h=h, **kwargs):
+        super(CentralDifferenceAdam, self).__init__(name="CentralDifferenceAdam", **kwargs)
+        self._set_hyper("learning_rate", learning_rate)
+        self._set_hyper("beta_1", beta_1)
+        self._set_hyper("beta_2", beta_2)
+        self._set_hyper("epsilon", epsilon)
+        self._set_hyper("h", h)
+
+    def _create_slots(self, var_list):
+        for var in var_list:
+            self.add_slot(var, "m")
+            self.add_slot(var, "v")
+
+  
+
+    def grad_approx(self, loss, var, h):
+        var_plus_h = var + h
+        var_minus_h = var - h
+        loss_plus = loss(var_plus_h)
+        loss_minus = loss(var_minus_h)
+        grad_approx = (loss_plus - loss_minus) / (2 * h)
+        return grad_approx
+
+    def _resource_apply_dense(self, grad_approx, var):
+        m = self.get_slot(var, "m")
+        v = self.get_slot(var, "v")
+        beta_1_t = self._get_hyper("beta_1", tf.float32)
+        beta_2_t = self._get_hyper("beta_2", tf.float32)
+        lr_t = self._get_hyper("learning_rate", tf.float32)
+        epsilon_t = self._get_hyper("epsilon", tf.float32)
+        local_step = tf.cast(self.iterations + 1, tf.float32)
+
+        m_t = tf.compat.v1.assign(m, beta_1_t * m + (1. - beta_1_t) * grad_approx, use_locking=self._use_locking)
+        v_t = tf.compat.v1.assign(v, beta_2_t * v + (1. - beta_2_t) * tf.square(grad_approx), use_locking=self._use_locking)
+
+        m_hat = m_t / (1. - tf.pow(beta_1_t, local_step))
+        v_hat = v_t / (1. - tf.pow(beta_2_t, local_step))
+
+        var_update = tf.compat.v1.assign_sub(var, lr_t * m_hat / (tf.sqrt(v_hat) + epsilon_t), use_locking=self._use_locking)
+        return tf.group(*[var_update, m_t, v_t])
+
+    def get_config(self):
+        config = super(CentralDifferenceAdam, self).get_config()
+        config.update({
+            "learning_rate": self._serialize_hyperparameter("learning_rate"),
+            "beta_1": self._serialize_hyperparameter("beta_1"),
+            "beta_2": self._serialize_hyperparameter("beta_2"),
+            "epsilon": self._serialize_hyperparameter("epsilon"),
+            "h": self._serialize_hyperparameter("h"),
+        })
+        return config
+
+
+cdPINNmodel = dde.Model(data, net)
+optimizer = CentralDifferenceAdam(learning_rate=1e-4)
+cdPINNmodel.compile(optimizer=optimizer, metrics=[])
+losshistory, train_state = cdPINNmodel.train(epochs=ec,callbacks=[])
+dde.saveplot(losshistory, train_state, issave=False, isplot=False)
+
+
+def gen_test_x(num):
+    x = np.linspace(-1, 1, num)
+    t = np.linspace(1, 0, num)
+    l = []
+
+    for i in range(len(t)):
+        for j in range(len(x)):
+            l.append([x[j], t[i]])
+    return np.array(l)
+x1=gen_test_x(1000)
+plt.rcParams.update({"font.size": 32})
+X1=gen_test_x(1000)
+y1= cdPINNmodel.predict(x1).tolist()
+
+
+disp1 = []
+prev = X1[0][1]
+temp = []
+for i in range(len(y1)):
+    if X1[i][1] == prev:
+        temp.append(y1[i][0])
+    else:
+        prev = X1[i][1]
+        temp2 = []
+        for elem in temp:
+            temp2.append((elem))
+        disp1.append(temp2)
+        temp.clear()
+        temp.append(y1[i][0])
+disp1.reverse()
+plt.figure(figsize=(20,20))  # 调整图像尺寸
+plt.xlabel("x")
+plt.ylabel("t")
+plt.title("CDadam Prediction")
+ax = plt.gca()
+im = ax.imshow(disp1, extent=(-1, 1, 0, 1), origin='lower', aspect='auto')
+divider = make_axes_locatable(ax)
+width = ax.get_position().width
+height = ax.get_position().height
+cax = divider.append_axes("right", size="2%", pad=1)
+# 绘制等高线图
+plt.colorbar(im, cax=cax)
+plt.show()
+
+
+plt.figure()
+x_true, y_true = gen_testdata()
+X2=x_true
+y2= cdPINNmodel.predict(x_true).tolist()
+
+disp2 = []
+prev = X2[0][1]
+temp = []
+
+for i in range(len(y2)):
+    if X2[i][1] == prev:
+        temp.append(abs(y2[i][0] - y_true[i][0]))
+    else:
+        prev = X2[i][1]
+        temp2 = []
+        for elem in temp:
+            temp2.append((elem))
+        disp2.append(temp2)
+        temp.clear()
+        temp.append(y2[i][0])
+disp2.reverse()
+
+plt.figure(figsize=(20, 20))
+plt.xlabel("x")
+plt.ylabel("t")
+plt.title("CDadam Error")
+
+ax = plt.gca()
+
+im = ax.imshow(disp2, extent=(-1, 1, 0, 1), origin='lower', aspect='auto')
+divider = make_axes_locatable(ax)
+width = ax.get_position().width
+height = ax.get_position().height
+cax = divider.append_axes("right", size="2%", pad=1)
+# 绘制等高线图
+plt.colorbar(im, cax=cax)
+plt.show()
+
+
+x_true, y_true = gen_testdata()
+y_pred = PINNmodel.predict(x_true)
+ycd_pred = cdPINNmodel.predict(x_true)
+print("PINN L2 relative error:", dde.metrics.l2_relative_error(y_true, y_pred))
+print("cd PINN L2 relative error:", dde.metrics.l2_relative_error(y_true, ycd_pred))
+
+X = geomtime.random_points(1000)
+# X = geomtime.uniform_points(1000)
+PINNresiduals = PINNmodel.predict(X, operator=PINNpde)[0]
+cdPINNresiduals = cdPINNmodel.predict(X, operator=cdPINNpde)[0]
+
+print("Mean absolute PDE residual:")
+print("\tPINN:", np.mean(abs(PINNresiduals)))
+print("\tcdPINN:", np.mean(abs(cdPINNresiduals)))
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+# 加载数据
+data = np.load("Burgers.npz")
+t = data["t"]
+x = data["x"]
+exact = data["usol"].T  # 确保 exact 是一个二维数组
+
+# 创建网格
+xx, tt = np.meshgrid(x, t)
+
+# 绘制热力图
+plt.figure(figsize=(20, 20))
+ax = plt.gca()
+
+# 使用 imshow 绘制热力图
+im = ax.imshow(exact, extent=(x.min(), x.max(), t.min(), t.max()), origin='lower', aspect='auto')
+
+# 创建颜色条
+divider = make_axes_locatable(ax)
+cax = divider.append_axes("right", size="2%", pad=0.1)
+plt.colorbar(im, cax=cax)
+
+# 设置轴标签
+ax.set_xlabel('x')
+ax.set_ylabel('t')
+ax.set_title('Burgers Equation Solution')
+
+# 显示图像
+plt.show()
