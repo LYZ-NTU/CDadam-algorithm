@@ -148,7 +148,7 @@ result_improved, path_improved = CDadam(convex_func, x0, y0, learning_rate, num_
 
 # 可视化比较
 paths = [path_adamax, path_nadam]
-labels = ['Adamax', 'Nadam']
+labels = ['Adam', 'CDadam']
 linestyles = ['-.', '--']
 colors = ['#1f77b4', 'm']
 
