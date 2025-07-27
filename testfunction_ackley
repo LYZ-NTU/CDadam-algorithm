@@ -1,0 +1,243 @@
+from sympy import *
+from math import *
+import numpy as np
+import time
+import random
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+# 设置绘图样式
+plt.rcParams['axes.linewidth'] = 1  # 图框宽度
+plt.rcParams['figure.dpi'] = 500  # plt.show显示分辨率
+font = {'family': 'serif',
+        'serif': 'Times New Roman',
+        'weight': 'normal',
+        'size': 12}
+plt.rc('font', **font)
+
+from matplotlib import rcParams
+
+config = {
+    "font.size": 12,
+    "mathtext.fontset": 'stix',
+}
+rcParams.update(config)
+import warnings
+warnings.filterwarnings('ignore')
+
+# Ackley函数定义
+def ackley(x, y):
+    return -20 * np.exp(-0.2 * np.sqrt((x**2 + y**2) / 2)) - np.exp((np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y)) / 2) + 20 + np.e
+
+# 创建3D图形
+fig = plt.figure(figsize=(8, 6), dpi=400)  # 增大图形尺寸
+ax3 = plt.axes(projection='3d')
+
+# 定义数据范围
+xx = np.arange(-5, 5, 0.1)  # 调整范围以更好展示Ackley函数特性
+yy = np.arange(-5, 5, 0.1)
+X, Y = np.meshgrid(xx, yy)
+Z = ackley(X, Y)
+
+# 绘制曲面
+surf = ax3.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap='rainbow',
+                       edgecolor='none', alpha=0.9)
+# 设置坐标轴标签
+ax3.set_xlabel('X', fontsize=12, labelpad=10)
+ax3.set_ylabel('Y', fontsize=12, labelpad=10)
+ax3.set_zlabel('Z', fontsize=12, labelpad=10)
+
+# 设置视角
+ax3.view_init(elev=30, azim=45)  # 调整视角
+
+# 调整布局
+plt.tight_layout()
+
+# 保存图像
+plt.savefig('21ackley_function_3d.png', dpi=450, bbox_inches='tight')
+
+# 显示图形
+#plt.show()
+
+
+import sympy as sp
+import numpy as np
+import time
+import random
+import matplotlib.pyplot as plt
+from sympy import symbols, Eq, solve
+import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import pyplot as plt
+from scipy.special import factorial
+import random
+import time
+import warnings
+
+plt.rcParams['axes.linewidth'] = 1  # 图框宽度
+plt.rcParams['figure.dpi'] = 500  # plt.show显示分辨率
+font = {'family': 'serif',
+        'serif': 'Times New Roman',
+        'weight': 'normal',
+        'size': 22}
+plt.rc('font', **font)
+
+from matplotlib import rcParams
+
+config = {
+    "font.size": 20,
+    "mathtext.fontset": 'stix',
+}
+rcParams.update(config)
+import warnings
+
+warnings.filterwarnings('ignore')
+random.seed(10)
+
+def adam(f, df, x0, y0, learning_rate, num_iters, beta1=0.9, beta2=0.999, epsilon=1e-8):
+    time1 = time.time()
+    x = x0
+    y = y0
+    m_x = m_y = v_x = v_y = 0
+    ada = [(x0, y0)]
+    a = None
+    for i in range(1, num_iters + 1):
+        grad_x, grad_y = df(x, y)
+        m_x = beta1 * m_x + (1 - beta1) * grad_x
+        m_y = beta1 * m_y + (1 - beta1) * grad_y
+        v_x = beta2 * v_x + (1 - beta2) * grad_x ** 2
+        v_y = beta2 * v_y + (1 - beta2) * grad_y ** 2
+        m_hat_x = m_x / (1 - beta1 ** i)
+        m_hat_y = m_y / (1 - beta1 ** i)
+        v_hat_x = v_x / (1 - beta2 ** i)
+        v_hat_y = v_y / (1 - beta2 ** i)
+        x -= learning_rate * m_hat_x / (np.sqrt(v_hat_x) + epsilon)
+        y -= learning_rate * m_hat_y / (np.sqrt(v_hat_y) + epsilon)
+        ada.append((x, y))
+        b = f(x, y)
+        if i == 19:
+            print('Adam 20 step loss:', b)
+        if i == 49:
+            print('Adam 50 step loss:', b)
+        if i == num_iters - 1:
+            print('Adam final loss:', b)
+        if a is None and i > 10 and abs(f(x, y) - f(ada[-2][0], ada[-2][1])) < 1e-5:
+            a = 0
+            print('Adam收敛于第', i, '步')
+    print(f'Adam收敛误差:{abs(f(ada[-1][0], ada[-1][1]) - 0)}')
+    t = time.time() - time1
+    print('Adam运行时间:', t, '秒')
+    return (x, y), ada
+
+def CDadam(f, x0, y0, learning_rate, num_iters, beta1=0.9, beta2=0.999, epsilon=1e-8, h=0.05):
+    time1 = time.time()
+    x = x0
+    y = y0
+    m_x = m_y = v_x = v_y = 0
+    ada = [(x0, y0)]
+    a = None
+
+    for i in range(1, num_iters + 1):
+        dx = (f(x + h, y) - f(x - h, y)) / (2 * h)
+        dy = (f(x, y + h) - f(x, y - h)) / (2 * h)
+
+        m_x = beta1 * m_x + (1 - beta1) * dx
+        m_y = beta1 * m_y + (1 - beta1) * dy
+        v_x = beta2 * v_x + (1 - beta2) * dx ** 2
+        v_y = beta2 * v_y + (1 - beta2) * dy ** 2
+        m_hat_x = m_x / (1 - beta1 ** i)
+        m_hat_y = m_y / (1 - beta1 ** i)
+        v_hat_x = v_x / (1 - beta2 ** i)
+        v_hat_y = v_y / (1 - beta2 ** i)
+        x -= learning_rate * m_hat_x / (np.sqrt(v_hat_x) + epsilon)
+        y -= learning_rate * m_hat_y / (np.sqrt(v_hat_y) + epsilon)
+        ada.append((x, y))
+        b = f(x, y)
+        if i == 19:
+            print('CDAdam 20 step loss:', b)
+        if i == 49:
+            print('CDAdam 50 step loss:', b)
+        if i == num_iters - 1:
+            print('CDAdam final loss:', b)
+        if a is None and i > 10 and abs(f(x, y) - f(ada[-2][0], ada[-2][1])) < 1e-5:
+            a = 0
+            print('CDAdam收敛于第', i, '步')
+    print(f'CDAdam收敛误差:{abs(f(ada[-1][0], ada[-1][1]) - 0)}')
+    t = time.time() - time1
+    print('CDAdam运行时间:', t, '秒')
+    return (x, y), ada
+
+
+
+def ackley(x, y):
+    return -20 * np.exp(-0.2 * np.sqrt((x**2 + y**2) / 2)) - np.exp((np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y)) / 2) + 20 + np.e
+
+# 定义 Ackley 函数的梯度（用于原始 Adam）
+def dackley(x, y):
+    dx = 20 * np.exp(-0.2 * np.sqrt((x**2 + y**2) / 2)) * x / np.sqrt(2 * (x**2 + y**2)) + np.pi * np.exp((np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y)) / 2) * np.sin(2 * np.pi * x)
+    dy = 20 * np.exp(-0.2 * np.sqrt((x**2 + y**2) / 2)) * y / np.sqrt(2 * (x**2 + y**2)) + np.pi * np.exp((np.cos(2 * np.pi * x) + np.cos(2 * np.pi * y)) / 2) * np.sin(2 * np.pi * y)
+    return dx, dy
+
+x0 = -0.4
+y0 = 0.4
+learning_rate = 0.01
+num_iters = 200
+
+# 运行原始 Adam 算法
+print("Running original Adam algorithm...")
+result_original, path_original = adam(ackley, dackley, x0, y0, learning_rate, num_iters)
+
+# 运行改进后的 Adam 算法
+print("\nRunning CDAdam algorithm...")
+result_improved, path_improved = CDadam(ackley, x0, y0, learning_rate, num_iters,h=0.05)
+
+
+
+# 计算各种算法的损失值
+adam_loss = [ackley(p[0], p[1]) for p in path_original]
+cdadam_loss = [ackley(p[0], p[1]) for p in path_improved]
+
+
+# 可视化比较
+paths = [path_adamax, path_nadam]
+labels = ['Adamax', 'Nadam']
+linestyles = ['-.', '--',]
+colors = ['#1f77b4', 'm']
+
+plt.figure(figsize=(8, 6), dpi=500)
+for path, label, linestyle, color in zip(paths, labels, linestyles, colors):
+    plt.plot([i[0] for i in path], label=label, linestyle=linestyle, color=color)
+plt.scatter(0, x0, color="black", s=100, zorder=10, label='Starting Point')
+plt.ylabel('x', fontsize=26)
+plt.xlabel('step', fontsize=26)
+plt.xticks(fontsize=24)
+plt.yticks(fontsize=24)
+plt.legend(loc='lower right', fontsize=20)
+plt.savefig('21comparison_x_ackley.png', bbox_inches='tight', dpi=450)
+
+plt.figure(figsize=(8, 6), dpi=500)
+for path, label, linestyle, color in zip(paths, labels, linestyles, colors):
+    plt.plot([i[1] for i in path], label=label, linestyle=linestyle, color=color)
+plt.scatter(0, y0, color="black", s=100, zorder=10, label='Starting Point')
+plt.ylabel('y', fontsize=26)
+plt.xlabel('step', fontsize=26)
+plt.xticks(fontsize=24)
+plt.yticks(fontsize=24)
+plt.legend(loc='upper right', fontsize=20)
+plt.savefig('21comparison_y_ackley.png', bbox_inches='tight', dpi=450)
+
+# 添加损失值的可视化图
+plt.figure(figsize=(12, 8))
+plt.plot(adamax_loss, label='Adamax Loss', linestyle='-.', color='#1f77b4')
+plt.plot(nadam_loss, label='Nadam Loss', linestyle='--', color='m')
+plt.plot(amsgrad_loss, label='Amsgrad Loss', linestyle='-.', color='g')
+plt.plot(adam_loss, label='Adam Loss', linestyle='--', color='k')
+plt.plot(cdadam_loss, label='CDAdam Loss', linestyle='-', color='r')
+plt.ylabel('Loss Value', fontsize=26)
+plt.xlabel('step', fontsize=26)
+plt.xticks(fontsize=24)
+plt.yticks(fontsize=24)
+plt.legend(loc='upper right', fontsize=20)
+plt.savefig('21comparison_loss_ackley.png', bbox_inches='tight', dpi=450)
+
+#plt.show()
