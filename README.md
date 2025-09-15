@@ -23,4 +23,24 @@ This repository houses the implementation of the CDadam algorithm, an Adam varia
 # Usage
 To use the code, simply navigate to the respective directories for test functions or equations. Each file contains the necessary code to run experiments with the CDadam algorithm on the corresponding function or equation. You can modify parameters within the files to suit different experimental setups and observe how the CDadam algorithm performs under varying conditions.
 # Dependencies
-The code is implemented in [specify programming language, e.g., Python] and relies on common scientific computing libraries such as [list libraries like NumPy, SciPy, TensorFlow/PyTorch etc., if applicable]. Ensure these dependencies are installed before running the code.
+DeepXDE                      1.10.1
+keras                        2.10.0
+matplotlib                   3.7.5
+numpy                        1.24.1
+openpyxl                     3.1.5
+pandas                       2.0.3
+pip                          24.2
+scikit-learn                 1.3.2
+scikit-optimize              0.10.2
+scipy                        1.10.1
+tensorboard                  2.10.1
+tensorboard-data-server      0.6.1
+tensorboard-plugin-wit       1.8.1
+tensorflow                   2.10.0
+tensorflow-estimator         2.10.0
+tensorflow-intel             2.13.0
+tensorflow-io-gcs-filesystem 0.31.0
+tensorflow-probability       0.18.0
+torch                        2.4.1+cu121
+torchaudio                   2.4.1+cu121
+torchvision                  0.19.1+cu121
